@@ -96,3 +96,30 @@ export function arrayBufferToBase64(buffer) {
   }
   return btoa(binary);
 }
+
+/**
+ * Dummy KEK Wrapping Logic (Placeholder)
+ * Wraps the DEK so it can be sent to the backend.
+ * @param {CryptoKey} dek 
+ * @returns {Promise<string>} Base64 encoded encrypted DEK
+ */
+export async function wrapDEK(dek) {
+  // For now, simply export it and encode it. 
+  // In a real scenario, this would encrypt `exportedKey` with a derived KEK.
+  const exportedKey = await exportKey(dek);
+  return btoa(`DUMMY_KEK_WRAPPED_${exportedKey}`);
+}
+
+/**
+ * Dummy KEK Unwrapping Logic (Placeholder)
+ * Unwraps the DEK received from the backend.
+ * @param {string} encryptedDEK Base64 encoded encrypted DEK
+ * @returns {Promise<CryptoKey>} Unwrapped DEK
+ */
+export async function unwrapDEK(encryptedDEK) {
+  // For now, simply strip the dummy wrapper and import it.
+  // In a real scenario, this would decrypt with a derived KEK.
+  const decoded = atob(encryptedDEK);
+  const exportedKey = decoded.replace('DUMMY_KEK_WRAPPED_', '');
+  return await importKey(exportedKey);
+}

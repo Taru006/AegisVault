@@ -4,7 +4,6 @@ import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
-import UploadPage from "./pages/UploadPage.jsx";
 
 export default function App() {
   return (
@@ -22,7 +21,6 @@ export default function App() {
         }
       >
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/upload" element={<UploadPage />} />
       </Route>
     </Routes>
   );

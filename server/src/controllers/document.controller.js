@@ -1,58 +1,74 @@
-import {
-  PutObjectCommand,
-  GetObjectCommand,
-  DeleteObjectCommand,
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import fs from 'fs';
+import path from 'path';
 import { v4 as uuidv4 } from "uuid";
-import s3Client, { BUCKET_NAME } from "../config/s3.js";
-import Document from "../models/Document.model.js";
+import File from "../models/File.model.js";
+import FileVersion from "../models/FileVersion.model.js";
+import AuditLog from "../models/AuditLog.model.js";
+import mongoose from "mongoose";
+
+// Ensure uploads directory exists
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 /**
  * @route   POST /api/documents
- * @desc    Upload an encrypted document to S3
+ * @desc    Upload an encrypted document
  * @access  Private
  */
 export const uploadDocument = async (req, res, next) => {
   try {
-    const { title, description, originalName, mimeType, size, iv, contentHash, encryptedData } = req.body;
+    const { originalName, mimeType, size, iv, contentHash, encryptedData, encryptedDEK } = req.body;
 
-    if (!encryptedData || !iv) {
+    if (!encryptedData || !iv || !encryptedDEK) {
       res.status(400);
-      throw new Error("Encrypted data and IV are required");
+      throw new Error("Encrypted data, DEK, and IV are required");
     }
 
-    const s3Key = `documents/${req.user._id}/${uuidv4()}`;
+    const fileId = new mongoose.Types.ObjectId(); // Create ID beforehand for Audit Log and s3Key
+    const s3Key = `local_${req.user._id}_${uuidv4()}`;
+    const filePath = path.join(UPLOADS_DIR, s3Key);
 
-    // Upload encrypted blob to S3
+    // Save encrypted blob to local disk (mocking S3)
     const buffer = Buffer.from(encryptedData, "base64");
-    await s3Client.send(
-      new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: s3Key,
-        Body: buffer,
-        ContentType: "application/octet-stream",
-        Metadata: {
-          originalname: originalName,
-          mimetype: mimeType,
-        },
-      })
-    );
+    await fs.promises.writeFile(filePath, buffer);
 
     // Save metadata to MongoDB
-    const doc = await Document.create({
-      title,
-      description,
-      owner: req.user._id,
+    const newFile = await File.create({
+      _id: fileId,
+      name: originalName,
+      ownerId: req.user._id,
       s3Key,
-      originalName,
+      encryptedDEK,
+      iv,
       mimeType,
       size,
-      iv,
-      contentHash,
     });
 
-    res.status(201).json({ success: true, document: doc });
+    const fileVersion = await FileVersion.create({
+      fileId: newFile._id,
+      versionNumber: 1,
+      s3Key,
+      uploadedBy: req.user._id,
+      checksum: contentHash || "N/A",
+    });
+
+    newFile.currentVersionId = fileVersion._id;
+    await newFile.save();
+
+    // Create Audit Log
+    const lastLog = await AuditLog.findOne().sort({ timestamp: -1 });
+    const previousHash = lastLog ? lastLog.currentHash : "0".repeat(64);
+
+    await AuditLog.create({
+      action: 'UPLOAD',
+      userId: req.user._id,
+      fileId: newFile._id,
+      previousHash
+    });
+
+    res.status(201).json({ success: true, document: newFile });
   } catch (error) {
     next(error);
   }
@@ -65,14 +81,10 @@ export const uploadDocument = async (req, res, next) => {
  */
 export const getDocuments = async (req, res, next) => {
   try {
-    const docs = await Document.find({
-      $or: [
-        { owner: req.user._id },
-        { "sharedWith.user": req.user._id },
-      ],
-    })
+    // Only owner visibility for now as per schema simplification
+    const docs = await File.find({ ownerId: req.user._id })
       .sort({ createdAt: -1 })
-      .populate("owner", "name email");
+      .populate("ownerId", "name email");
 
     res.json({ success: true, count: docs.length, documents: docs });
   } catch (error) {
@@ -82,37 +94,52 @@ export const getDocuments = async (req, res, next) => {
 
 /**
  * @route   GET /api/documents/:id
- * @desc    Get single document with presigned download URL
+ * @desc    Get single document (download)
  * @access  Private
  */
 export const getDocument = async (req, res, next) => {
   try {
-    const doc = await Document.findById(req.params.id).populate("owner", "name email");
+    const doc = await File.findById(req.params.id);
 
     if (!doc) {
       res.status(404);
-      throw new Error("Document not found");
+      throw new Error("File not found");
     }
 
-    // Verify ownership or shared access
-    const isOwner = doc.owner._id.toString() === req.user._id.toString();
-    const isShared = doc.sharedWith.some(
-      (s) => s.user.toString() === req.user._id.toString()
-    );
-
-    if (!isOwner && !isShared) {
+    if (doc.ownerId.toString() !== req.user._id.toString()) {
       res.status(403);
       throw new Error("Access denied");
     }
 
-    // Generate presigned URL for download
-    const downloadUrl = await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({ Bucket: BUCKET_NAME, Key: doc.s3Key }),
-      { expiresIn: 3600 }
-    );
+    const filePath = path.join(UPLOADS_DIR, doc.s3Key);
+    if (!fs.existsSync(filePath)) {
+      res.status(404);
+      throw new Error("File blob missing from storage");
+    }
 
-    res.json({ success: true, document: doc, downloadUrl });
+    // Read the file and convert to base64
+    const fileBuffer = await fs.promises.readFile(filePath);
+    const encryptedData = fileBuffer.toString('base64');
+
+    // Create Audit Log
+    const lastLog = await AuditLog.findOne().sort({ timestamp: -1 });
+    const previousHash = lastLog ? lastLog.currentHash : "0".repeat(64);
+
+    await AuditLog.create({
+      action: 'DOWNLOAD',
+      userId: req.user._id,
+      fileId: doc._id,
+      previousHash
+    });
+
+    res.json({ 
+      success: true, 
+      document: doc,
+      encryptedData,
+      encryptedDEK: doc.encryptedDEK,
+      iv: doc.iv,
+      mimeType: doc.mimeType
+    });
   } catch (error) {
     next(error);
   }
@@ -120,32 +147,45 @@ export const getDocument = async (req, res, next) => {
 
 /**
  * @route   DELETE /api/documents/:id
- * @desc    Delete a document from S3 and MongoDB
+ * @desc    Delete a document from storage and MongoDB
  * @access  Private (owner only)
  */
 export const deleteDocument = async (req, res, next) => {
   try {
-    const doc = await Document.findById(req.params.id);
+    const doc = await File.findById(req.params.id);
 
     if (!doc) {
       res.status(404);
-      throw new Error("Document not found");
+      throw new Error("File not found");
     }
 
-    if (doc.owner.toString() !== req.user._id.toString()) {
+    if (doc.ownerId.toString() !== req.user._id.toString()) {
       res.status(403);
-      throw new Error("Only the document owner can delete it");
+      throw new Error("Only the owner can delete it");
     }
 
-    // Delete from S3
-    await s3Client.send(
-      new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: doc.s3Key })
-    );
+    // Delete from disk
+    const filePath = path.join(UPLOADS_DIR, doc.s3Key);
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+    }
 
     // Delete from MongoDB
     await doc.deleteOne();
+    await FileVersion.deleteMany({ fileId: doc._id });
 
-    res.json({ success: true, message: "Document deleted" });
+    // Create Audit Log
+    const lastLog = await AuditLog.findOne().sort({ timestamp: -1 });
+    const previousHash = lastLog ? lastLog.currentHash : "0".repeat(64);
+
+    await AuditLog.create({
+      action: 'DELETE',
+      userId: req.user._id,
+      fileId: doc._id,
+      previousHash
+    });
+
+    res.json({ success: true, message: "File deleted" });
   } catch (error) {
     next(error);
   }

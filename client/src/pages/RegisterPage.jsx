@@ -9,6 +9,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [role, setRole] = useState("Viewer");
   const [localError, setLocalError] = useState("");
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -35,7 +36,7 @@ export default function RegisterPage() {
       return;
     }
 
-    dispatch(registerUser({ name, email, password }));
+    dispatch(registerUser({ name, email, password, role }));
   };
 
   const displayError = localError || error;
@@ -138,6 +139,27 @@ export default function RegisterPage() {
                   className="w-full pl-11 pr-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-white placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-vault-500/50 focus:border-vault-500 transition-all"
                   placeholder="••••••••"
                 />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="register-role" className="block text-sm font-medium text-dark-300 mb-2">
+                Account Role
+              </label>
+              <div className="relative">
+                <HiOutlineShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-500" />
+                <select
+                  id="register-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 bg-dark-800 border border-dark-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-vault-500/50 focus:border-vault-500 transition-all appearance-none cursor-pointer"
+                >
+                  <option value="Viewer">Viewer</option>
+                  <option value="Admin">Admin</option>
+                </select>
+                <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-dark-500">
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
+                </div>
               </div>
             </div>
 

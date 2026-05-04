@@ -18,6 +18,10 @@ const fileSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  iv: {
+    type: String,
+    required: true,
+  },
   mimeType: {
     type: String,
     required: true,

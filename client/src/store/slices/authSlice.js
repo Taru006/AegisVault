@@ -7,7 +7,7 @@ export const registerUser = createAsyncThunk(
   async (userData, { rejectWithValue }) => {
     try {
       const { data } = await api.post("/auth/register", userData);
-      localStorage.setItem("token", data.token);
+      localStorage.setItem("token", data.accessToken);
       return data;
     } catch (error) {
       return rejectWithValue(
@@ -22,7 +22,7 @@ export const login = createAsyncThunk(
   async (credentials, { rejectWithValue }) => {
     try {
       const { data } = await api.post("/auth/login", credentials);
-      localStorage.setItem("token", data.token);
+      localStorage.setItem("token", data.accessToken);
       return data;
     } catch (error) {
       return rejectWithValue(
@@ -52,6 +52,7 @@ const authSlice = createSlice({
   initialState: {
     user: null,
     token: localStorage.getItem("token") || null,
+    role: null,
     loading: false,
     error: null,
   },
@@ -59,6 +60,7 @@ const authSlice = createSlice({
     logout(state) {
       state.user = null;
       state.token = null;
+      state.role = null;
       state.error = null;
       localStorage.removeItem("token");
     },
@@ -76,7 +78,8 @@ const authSlice = createSlice({
       .addCase(registerUser.fulfilled, (state, action) => {
         state.loading = false;
         state.user = action.payload.user;
-        state.token = action.payload.token;
+        state.token = action.payload.accessToken;
+        state.role = action.payload.user?.role || null;
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.loading = false;
@@ -92,7 +95,8 @@ const authSlice = createSlice({
       .addCase(login.fulfilled, (state, action) => {
         state.loading = false;
         state.user = action.payload.user;
-        state.token = action.payload.token;
+        state.token = action.payload.accessToken;
+        state.role = action.payload.user?.role || null;
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -107,11 +111,13 @@ const authSlice = createSlice({
       .addCase(loadUser.fulfilled, (state, action) => {
         state.loading = false;
         state.user = action.payload.user;
+        state.role = action.payload.user?.role || null;
       })
       .addCase(loadUser.rejected, (state) => {
         state.loading = false;
         state.user = null;
         state.token = null;
+        state.role = null;
         localStorage.removeItem("token");
       });
   },

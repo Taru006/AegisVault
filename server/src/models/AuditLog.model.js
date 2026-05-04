@@ -33,23 +33,18 @@ const auditLogSchema = new mongoose.Schema({
   },
 });
 
-auditLogSchema.pre('save', async function(next) {
+auditLogSchema.pre('save', async function() {
   if (this.isNew) {
-    try {
-      // Find the most recent log entry for this file to get its currentHash as our previousHash
-      const lastLog = await this.constructor.findOne({ fileId: this.fileId }).sort({ _id: -1 });
-      
-      this.previousHash = lastLog && lastLog.currentHash ? lastLog.currentHash : 'GENESIS';
+    // Find the most recent log entry for this file to get its currentHash as our previousHash
+    const lastLog = await this.constructor.findOne({ fileId: this.fileId }).sort({ _id: -1 });
+    
+    this.previousHash = lastLog && lastLog.currentHash ? lastLog.currentHash : 'GENESIS';
 
-      // Compute currentHash: SHA-256(action + userId + fileId + timestamp + previousHash)
-      const dataToHash = `${this.action}${this.userId.toString()}${this.fileId.toString()}${this.timestamp.toISOString()}${this.previousHash}`;
-      
-      this.currentHash = crypto.createHash('sha256').update(dataToHash).digest('hex');
-    } catch (error) {
-      return next(error);
-    }
+    // Compute currentHash: SHA-256(action + userId + fileId + timestamp + previousHash)
+    const dataToHash = `${this.action}${this.userId.toString()}${this.fileId.toString()}${this.timestamp.toISOString()}${this.previousHash}`;
+    
+    this.currentHash = crypto.createHash('sha256').update(dataToHash).digest('hex');
   }
-  next();
 });
 
 const AuditLog = mongoose.model('AuditLog', auditLogSchema);

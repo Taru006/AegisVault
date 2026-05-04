@@ -48,13 +48,6 @@ export default function Layout() {
             <HiOutlineHome className="w-5 h-5" />
             <span className="font-medium">Dashboard</span>
           </Link>
-          <Link
-            to="/upload"
-            className="flex items-center gap-3 px-4 py-3 rounded-lg text-dark-300 hover:text-white hover:bg-dark-800 transition-all duration-200"
-          >
-            <HiOutlineCloudUpload className="w-5 h-5" />
-            <span className="font-medium">Upload</span>
-          </Link>
         </nav>
 
         {/* User / Logout */}
