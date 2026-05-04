@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.routes.js";
 import documentRoutes from "./routes/document.routes.js";
 import userRoutes from "./routes/user.routes.js";
+import auditRoutes from "./routes/audit.routes.js";
 
 // Middleware imports
 import { notFound, errorHandler } from "./middleware/error.middleware.js";
@@ -44,6 +45,7 @@ export function createApp() {
   app.use("/api/auth", authRoutes);
   app.use("/api/documents", documentRoutes);
   app.use("/api/users", userRoutes);
+  app.use("/api/audit", auditRoutes);
 
   // ── Error Handling ──────────────────────────
   app.use(notFound);
