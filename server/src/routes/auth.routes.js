@@ -2,16 +2,18 @@ import { Router } from "express";
 import {
   register,
   login,
+  verifyMfa,
   logout,
   getMe,
 } from "../controllers/auth.controller.js";
-import { protect } from "../middleware/auth.middleware.js";
+import authenticate from "../middleware/authenticate.js";
 
 const router = Router();
 
 router.post("/register", register);
 router.post("/login", login);
-router.post("/logout", protect, logout);
-router.get("/me", protect, getMe);
+router.post("/verify-mfa", verifyMfa);
+router.post("/logout", authenticate, logout);
+router.get("/me", authenticate, getMe);
 
 export default router;

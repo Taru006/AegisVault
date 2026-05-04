@@ -5,11 +5,11 @@ import {
   getDocument,
   deleteDocument,
 } from "../controllers/document.controller.js";
-import { protect } from "../middleware/auth.middleware.js";
+import authenticate from "../middleware/authenticate.js";
 
 const router = Router();
 
-router.use(protect);
+router.use(authenticate);
 
 router.route("/").get(getDocuments).post(uploadDocument);
 router.route("/:id").get(getDocument).delete(deleteDocument);

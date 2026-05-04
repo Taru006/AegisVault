@@ -17,16 +17,24 @@ const userSchema = new mongoose.Schema(
       trim: true,
       match: [/^\S+@\S+\.\S+$/, "Please provide a valid email"],
     },
-    password: {
+    passwordHash: {
       type: String,
       required: [true, "Password is required"],
-      minlength: 8,
-      select: false, // never return password by default
+      select: false, // never return passwordHash by default
     },
     role: {
       type: String,
-      enum: ["user", "admin"],
-      default: "user",
+      enum: ["Admin", "Manager", "Viewer"],
+      default: "Viewer",
+    },
+    mfaSecret: {
+      type: String,
+      default: null,
+      select: false, // sensitive — never return by default
+    },
+    mfaEnabled: {
+      type: Boolean,
+      default: false,
     },
     publicKey: {
       type: String,
@@ -37,16 +45,15 @@ const userSchema = new mongoose.Schema(
 );
 
 // ── Hash password before save ───────────────
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
+userSchema.pre("save", async function () {
+  if (!this.isModified("passwordHash")) return;
   const salt = await bcrypt.genSalt(12);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
+  this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
 });
 
 // ── Instance method: compare password ───────
 userSchema.methods.comparePassword = async function (candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
+  return bcrypt.compare(candidatePassword, this.passwordHash);
 };
 
 const User = mongoose.model("User", userSchema);

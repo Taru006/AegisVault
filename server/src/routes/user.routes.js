@@ -4,11 +4,11 @@ import {
   updateProfile,
   getUsers,
 } from "../controllers/user.controller.js";
-import { protect } from "../middleware/auth.middleware.js";
+import authenticate from "../middleware/authenticate.js";
 
 const router = Router();
 
-router.use(protect);
+router.use(authenticate);
 
 router.route("/profile").get(getProfile).put(updateProfile);
 router.get("/", getUsers);
