@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  # ── MongoDB ────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: aegisvault-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - aegis-net
+
+  # ── Backend (Express API) ──────────────────
+  server:
+    build: ./server
+    container_name: aegisvault-server
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    networks:
+      - aegis-net
+
+  # ── Frontend (Vite React) ──────────────────
+  client:
+    build: ./client
+    container_name: aegisvault-client
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    env_file:
+      - .env
+    depends_on:
+      - server
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    networks:
+      - aegis-net
+
+volumes:
+  mongo-data:
+
+networks:
+  aegis-net:
+    driver: bridge
