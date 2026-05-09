@@ -81,8 +81,8 @@ export const uploadDocument = async (req, res, next) => {
  */
 export const getDocuments = async (req, res, next) => {
   try {
-    // Only owner visibility for now as per schema simplification
-    const docs = await File.find({ ownerId: req.user._id })
+    // Global visibility for the vault so all users (including Viewers) can see documents
+    const docs = await File.find({})
       .sort({ createdAt: -1 })
       .populate("ownerId", "name email");
 
@@ -106,10 +106,7 @@ export const getDocument = async (req, res, next) => {
       throw new Error("File not found");
     }
 
-    if (doc.ownerId.toString() !== req.user._id.toString()) {
-      res.status(403);
-      throw new Error("Access denied");
-    }
+    // No owner restriction for viewing/downloading in a centralized vault
 
     const filePath = path.join(UPLOADS_DIR, doc.s3Key);
     if (!fs.existsSync(filePath)) {
@@ -117,9 +114,42 @@ export const getDocument = async (req, res, next) => {
       throw new Error("File blob missing from storage");
     }
 
-    // Read the file and convert to base64
-    const fileBuffer = await fs.promises.readFile(filePath);
-    const encryptedData = fileBuffer.toString('base64');
+    const downloadUrl = `${req.protocol}://${req.get('host')}/api/documents/${doc._id}/download`;
+
+    res.json({ 
+      success: true, 
+      document: doc,
+      downloadUrl,
+      encryptedDEK: doc.encryptedDEK,
+      iv: doc.iv,
+      mimeType: doc.mimeType
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   GET /api/documents/:id/download
+ * @desc    Download a document
+ * @access  Private
+ */
+export const downloadDocument = async (req, res, next) => {
+  try {
+    const doc = await File.findById(req.params.id);
+
+    if (!doc) {
+      res.status(404);
+      throw new Error("File not found");
+    }
+
+    // No owner restriction for downloading in a centralized vault
+
+    const filePath = path.join(UPLOADS_DIR, doc.s3Key);
+    if (!fs.existsSync(filePath)) {
+      res.status(404);
+      throw new Error("File blob missing from storage");
+    }
 
     // Create Audit Log
     const lastLog = await AuditLog.findOne().sort({ timestamp: -1 });
@@ -132,14 +162,11 @@ export const getDocument = async (req, res, next) => {
       previousHash
     });
 
-    res.json({ 
-      success: true, 
-      document: doc,
-      encryptedData,
-      encryptedDEK: doc.encryptedDEK,
-      iv: doc.iv,
-      mimeType: doc.mimeType
-    });
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${doc.name}.enc"`);
+
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
   } catch (error) {
     next(error);
   }
@@ -159,9 +186,12 @@ export const deleteDocument = async (req, res, next) => {
       throw new Error("File not found");
     }
 
-    if (doc.ownerId.toString() !== req.user._id.toString()) {
+    // Only the owner or an Admin can delete the file
+    const isOwner = doc.ownerId.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'Admin';
+    if (!isOwner && !isAdmin) {
       res.status(403);
-      throw new Error("Only the owner can delete it");
+      throw new Error("Only the owner or an Admin can delete this file");
     }
 
     // Delete from disk

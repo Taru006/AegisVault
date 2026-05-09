@@ -102,13 +102,73 @@ export const accessShareLink = async (req, res, next) => {
       throw new Error('File blob missing from storage');
     }
 
+    const downloadUrl = `${req.protocol}://${req.get('host')}/api/share/${token}/download`;
+
+    // Return the link info and metadata
+    res.json({
+      success: true,
+      document: {
+        _id: file._id,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size,
+      },
+      downloadUrl,
+      encryptedDEK: file.encryptedDEK,
+      iv: file.iv,
+      mimeType: file.mimeType
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   GET /api/share/:token/download
+ * @desc    Download a shared file via token
+ * @access  Public (Token based)
+ */
+export const downloadSharedFile = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+
+    const shareLink = await ShareLink.findOne({ token }).populate('fileId');
+
+    if (!shareLink) {
+      res.status(404);
+      throw new Error('Share link not found');
+    }
+
+    if (shareLink.isRevoked) {
+      res.status(403);
+      throw new Error('Share link has been revoked');
+    }
+
+    if (new Date() > shareLink.expiresAt) {
+      res.status(403);
+      throw new Error('Share link has expired');
+    }
+
+    if (shareLink.downloadCount >= shareLink.maxDownloads) {
+      res.status(403);
+      throw new Error('Maximum download limit reached for this link');
+    }
+
+    const file = shareLink.fileId;
+    if (!file) {
+      res.status(404);
+      throw new Error('The original file has been deleted');
+    }
+
+    const filePath = path.join(UPLOADS_DIR, file.s3Key);
+    if (!fs.existsSync(filePath)) {
+      res.status(404);
+      throw new Error('File blob missing from storage');
+    }
+
     // Increment download count
     shareLink.downloadCount += 1;
     await shareLink.save();
-
-    // Read the file and convert to base64
-    const fileBuffer = await fs.promises.readFile(filePath);
-    const encryptedData = fileBuffer.toString('base64');
 
     // Emit Socket.io notification to the file owner
     notifyUser(shareLink.createdBy, 'fileDownloaded', {
@@ -132,20 +192,12 @@ export const accessShareLink = async (req, res, next) => {
       previousHash
     });
 
-    // Return the encrypted file contents
-    res.json({
-      success: true,
-      document: {
-        _id: file._id,
-        name: file.name,
-        mimeType: file.mimeType,
-        size: file.size,
-      },
-      encryptedData,
-      encryptedDEK: file.encryptedDEK,
-      iv: file.iv,
-      mimeType: file.mimeType
-    });
+    // Serve the file
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${file.name}.enc"`);
+
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
   } catch (error) {
     next(error);
   }

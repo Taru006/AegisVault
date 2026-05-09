@@ -39,28 +39,25 @@ export default function DashboardPage() {
     try {
       setDownloadingId(fileDoc._id);
       
-      // 1. Fetch encrypted blob and encryptedDEK from backend
-      // Assuming a GET /documents/:id/download or similar route exists that returns the encrypted payload
-      // For this frontend implementation, let's assume we GET /documents/:id
+      // 1. Fetch metadata (includes DEK, IV, and downloadUrl)
       const { data } = await api.get(`/documents/${fileDoc._id}`);
       
-      // The backend should return { encryptedData: 'base64...', encryptedDEK: '...', iv: '...', mimeType: '...' }
-      // Using mock extraction if the exact schema fields differ
-      const encryptedBase64 = data.encryptedData || fileDoc.encryptedData;
       const encryptedDEKStr = data.encryptedDEK || fileDoc.encryptedDEK;
       const ivStr = data.iv || fileDoc.iv;
+      const downloadUrl = data.downloadUrl;
 
-      if (!encryptedBase64 || !encryptedDEKStr) {
-        throw new Error("Missing encrypted data or DEK");
+      if (!downloadUrl || !encryptedDEKStr) {
+        throw new Error("Missing download URL or DEK");
       }
 
-      // Convert base64 back to ArrayBuffer
-      const encryptedBuffer = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0)).buffer;
+      // 2. Fetch the actual encrypted blob using the downloadUrl
+      const fileResponse = await api.get(downloadUrl, { responseType: 'arraybuffer' });
+      const encryptedBuffer = fileResponse.data;
 
-      // 2. Unwrap the DEK
+      // 3. Unwrap the DEK
       const dek = await unwrapDEK(encryptedDEKStr);
 
-      // 3. Decrypt the file data locally
+      // 4. Decrypt the file data locally
       const decryptedBuffer = await decryptData(encryptedBuffer, dek, ivStr);
 
       // 4. Trigger download
