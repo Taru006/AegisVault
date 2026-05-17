@@ -5,6 +5,7 @@ import ShareLink from '../models/ShareLink.model.js';
 import File from '../models/File.model.js';
 import { notifyUser } from '../config/socket.js';
 import AuditLog from '../models/AuditLog.model.js';
+import bcrypt from 'bcryptjs';
 
 // Ensure uploads directory exists for mock local download
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
@@ -16,7 +17,7 @@ const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
  */
 export const createShareLink = async (req, res, next) => {
   try {
-    const { fileId, expirationHours = 24, maxDownloads = 1 } = req.body;
+    const { fileId, expirationHours = 24, maxDownloads = 1, password } = req.body;
 
     if (!fileId) {
       res.status(400);
@@ -38,12 +39,19 @@ export const createShareLink = async (req, res, next) => {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + parseInt(expirationHours, 10));
 
+    let passwordHash = null;
+    if (password) {
+      const salt = await bcrypt.genSalt(10);
+      passwordHash = await bcrypt.hash(password, salt);
+    }
+
     const shareLink = await ShareLink.create({
       fileId,
       token,
       createdBy: req.user._id,
       expiresAt,
       maxDownloads: parseInt(maxDownloads, 10),
+      passwordHash,
     });
 
     res.status(201).json({
@@ -67,6 +75,7 @@ export const createShareLink = async (req, res, next) => {
 export const accessShareLink = async (req, res, next) => {
   try {
     const { token } = req.params;
+    const { password } = req.query;
 
     const shareLink = await ShareLink.findOne({ token }).populate('fileId');
 
@@ -90,6 +99,18 @@ export const accessShareLink = async (req, res, next) => {
       throw new Error('Maximum download limit reached for this link');
     }
 
+    if (shareLink.passwordHash) {
+      if (!password) {
+        res.status(401);
+        throw new Error('PASSWORD_REQUIRED');
+      }
+      const isMatch = await bcrypt.compare(password, shareLink.passwordHash);
+      if (!isMatch) {
+        res.status(401);
+        throw new Error('Invalid password');
+      }
+    }
+
     const file = shareLink.fileId;
     if (!file) {
       res.status(404);
@@ -102,7 +123,7 @@ export const accessShareLink = async (req, res, next) => {
       throw new Error('File blob missing from storage');
     }
 
-    const downloadUrl = `${req.protocol}://${req.get('host')}/api/share/${token}/download`;
+    const downloadUrl = `share/${token}/download`;
 
     // Return the link info and metadata
     res.json({
@@ -131,6 +152,7 @@ export const accessShareLink = async (req, res, next) => {
 export const downloadSharedFile = async (req, res, next) => {
   try {
     const { token } = req.params;
+    const { password } = req.query;
 
     const shareLink = await ShareLink.findOne({ token }).populate('fileId');
 
@@ -152,6 +174,18 @@ export const downloadSharedFile = async (req, res, next) => {
     if (shareLink.downloadCount >= shareLink.maxDownloads) {
       res.status(403);
       throw new Error('Maximum download limit reached for this link');
+    }
+
+    if (shareLink.passwordHash) {
+      if (!password) {
+        res.status(401);
+        throw new Error('PASSWORD_REQUIRED');
+      }
+      const isMatch = await bcrypt.compare(password, shareLink.passwordHash);
+      if (!isMatch) {
+        res.status(401);
+        throw new Error('Invalid password');
+      }
     }
 
     const file = shareLink.fileId;

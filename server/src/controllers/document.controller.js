@@ -19,7 +19,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
  */
 export const uploadDocument = async (req, res, next) => {
   try {
-    const { originalName, mimeType, size, iv, contentHash, encryptedData, encryptedDEK } = req.body;
+    const { originalName, mimeType, size, iv, contentHash, encryptedData, encryptedDEK, folder, tags } = req.body;
 
     if (!encryptedData || !iv || !encryptedDEK) {
       res.status(400);
@@ -44,6 +44,8 @@ export const uploadDocument = async (req, res, next) => {
       iv,
       mimeType,
       size,
+      folder: folder || 'root',
+      tags: tags || [],
     });
 
     const fileVersion = await FileVersion.create({
@@ -69,6 +71,66 @@ export const uploadDocument = async (req, res, next) => {
     });
 
     res.status(201).json({ success: true, document: newFile });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   POST /api/documents/:id/versions
+ * @desc    Upload a new version of a document
+ * @access  Private (Owner only)
+ */
+export const uploadDocumentVersion = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { size, iv, contentHash, encryptedData, encryptedDEK } = req.body;
+
+    const file = await File.findById(id);
+    if (!file) {
+      res.status(404);
+      throw new Error("File not found");
+    }
+
+    if (file.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
+      res.status(403);
+      throw new Error("Access denied");
+    }
+
+    const s3Key = `local_${req.user._id}_${uuidv4()}`;
+    const filePath = path.join(UPLOADS_DIR, s3Key);
+
+    const buffer = Buffer.from(encryptedData, "base64");
+    await fs.promises.writeFile(filePath, buffer);
+
+    const oldVersionsCount = await FileVersion.countDocuments({ fileId: file._id });
+
+    const fileVersion = await FileVersion.create({
+      fileId: file._id,
+      versionNumber: oldVersionsCount + 1,
+      s3Key,
+      uploadedBy: req.user._id,
+      checksum: contentHash || "N/A",
+    });
+
+    file.currentVersionId = fileVersion._id;
+    file.s3Key = s3Key;
+    file.encryptedDEK = encryptedDEK;
+    file.iv = iv;
+    file.size = size;
+    await file.save();
+
+    const lastLog = await AuditLog.findOne().sort({ timestamp: -1 });
+    const previousHash = lastLog ? lastLog.currentHash : "0".repeat(64);
+
+    await AuditLog.create({
+      action: 'UPDATE_VERSION',
+      userId: req.user._id,
+      fileId: file._id,
+      previousHash
+    });
+
+    res.status(201).json({ success: true, document: file });
   } catch (error) {
     next(error);
   }
@@ -114,7 +176,7 @@ export const getDocument = async (req, res, next) => {
       throw new Error("File blob missing from storage");
     }
 
-    const downloadUrl = `${req.protocol}://${req.get('host')}/api/documents/${doc._id}/download`;
+    const downloadUrl = `documents/${doc._id}/download`;
 
     res.json({ 
       success: true, 

@@ -34,6 +34,10 @@ const shareLinkSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    passwordHash: {
+      type: String, // Optional bcrypt hash for password protection
+      default: null,
+    },
   },
   { timestamps: true }
 );

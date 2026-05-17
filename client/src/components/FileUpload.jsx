@@ -1,16 +1,25 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { uploadFile, setUploadStatus } from "../store/slices/fileSlice.js";
+import { uploadFile, uploadFileVersion, setUploadStatus } from "../store/slices/fileSlice.js";
 import { generateKey, encryptData, hashData, arrayBufferToBase64, wrapDEK } from "../utils/crypto.js";
 import { HiOutlineCloudUpload, HiOutlineDocumentAdd, HiOutlineLockClosed } from "react-icons/hi";
 import toast from "react-hot-toast";
 
-export default function FileUpload({ onUploadComplete }) {
+export default function FileUpload({ onUploadComplete, globalDroppedFile, onGlobalFileHandled, versionTargetId, versionFileName, onCancelVersion }) {
   const [file, setFile] = useState(null);
+  const [folder, setFolder] = useState("root");
+  const [tags, setTags] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   const dispatch = useDispatch();
   const { uploadStatus } = useSelector((state) => state.files);
+
+  useEffect(() => {
+    if (globalDroppedFile) {
+      setFile(globalDroppedFile);
+      if (onGlobalFileHandled) onGlobalFileHandled();
+    }
+  }, [globalDroppedFile, onGlobalFileHandled]);
 
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
@@ -60,9 +69,7 @@ export default function FileUpload({ onUploadComplete }) {
       // 5. Wrap/Encrypt the DEK (Dummy KEK for now)
       const encryptedDEK = await wrapDEK(dek);
 
-      // 6. Upload encrypted data and keys to server
-      const result = await dispatch(
-        uploadFile({
+      const payload = {
           originalName: file.name,
           mimeType: file.type,
           size: file.size,
@@ -70,11 +77,21 @@ export default function FileUpload({ onUploadComplete }) {
           contentHash,
           encryptedDEK, // Sent to backend!
           encryptedData: arrayBufferToBase64(ciphertext), // Only sending encrypted blob
-        })
-      ).unwrap();
+          folder: folder.trim() || 'root',
+          tags: tags.split(',').map(t => t.trim()).filter(Boolean)
+      };
 
-      toast.success("Document securely encrypted & uploaded!");
+      if (versionTargetId) {
+        await dispatch(uploadFileVersion({ fileId: versionTargetId, payload })).unwrap();
+        toast.success("New version securely uploaded!");
+      } else {
+        await dispatch(uploadFile(payload)).unwrap();
+        toast.success("Document securely encrypted & uploaded!");
+      }
+
       setFile(null);
+      setFolder("root");
+      setTags("");
       if (onUploadComplete) onUploadComplete();
       dispatch(setUploadStatus('idle'));
       
@@ -87,11 +104,22 @@ export default function FileUpload({ onUploadComplete }) {
   const isProcessing = uploadStatus === 'encrypting' || uploadStatus === 'uploading';
 
   return (
-    <div className="bg-dark-900/60 border border-dark-700/40 rounded-2xl p-6">
+    <div className="bg-dark-900/60 border border-dark-700/40 rounded-2xl p-6 relative">
+      {versionTargetId && (
+        <button 
+          onClick={onCancelVersion} 
+          className="absolute top-4 right-4 text-dark-500 hover:text-white"
+        >
+          Cancel
+        </button>
+      )}
       <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
         <HiOutlineLockClosed className="text-vault-400" />
-        Secure Upload
+        {versionTargetId ? "Upload New Version" : "Secure Upload"}
       </h2>
+      {versionTargetId && (
+        <p className="text-sm text-vault-300 mb-4">Updating: {versionFileName}</p>
+      )}
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Drop Zone */}
         <div
@@ -120,6 +148,26 @@ export default function FileUpload({ onUploadComplete }) {
             </div>
           )}
         </div>
+
+        {/* Folder & Tags Inputs (Only when creating new file) */}
+        {!versionTargetId && (
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="Folder (e.g., Financials)" 
+              value={folder}
+              onChange={(e) => setFolder(e.target.value)}
+              className="w-1/2 bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-white text-sm focus:ring-1 focus:ring-vault-500 outline-none"
+            />
+            <input 
+              type="text" 
+              placeholder="Tags (comma separated)" 
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              className="w-1/2 bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-white text-sm focus:ring-1 focus:ring-vault-500 outline-none"
+            />
+          </div>
+        )}
 
         {/* Submit */}
         <button

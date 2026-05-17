@@ -45,3 +45,68 @@ export const getUsers = async (req, res, next) => {
     next(error);
   }
 };
+/**
+ * @route   PUT /api/users/:id/role
+ * @desc    Update user role
+ * @access  Private (Admin only)
+ */
+export const updateUserRole = async (req, res, next) => {
+  try {
+    if (req.user.role !== "Admin") {
+      res.status(403);
+      throw new Error("Access denied: Admin only");
+    }
+
+    const { role } = req.body;
+    if (!["Admin", "Manager", "Viewer"].includes(role)) {
+      res.status(400);
+      throw new Error("Invalid role");
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true }
+    ).select("-passwordHash -mfaSecret");
+
+    if (!user) {
+      res.status(404);
+      throw new Error("User not found");
+    }
+
+    res.json({ success: true, user });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @route   DELETE /api/users/:id
+ * @desc    Delete user
+ * @access  Private (Admin only)
+ */
+export const deleteUser = async (req, res, next) => {
+  try {
+    if (req.user.role !== "Admin") {
+      res.status(403);
+      throw new Error("Access denied: Admin only");
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      res.status(404);
+      throw new Error("User not found");
+    }
+
+    // Don't allow deleting self
+    if (user._id.toString() === req.user._id.toString()) {
+      res.status(400);
+      throw new Error("Cannot delete your own account");
+    }
+
+    await user.deleteOne();
+    res.json({ success: true, message: "User deleted" });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -1,0 +1,3 @@
+AegisVault Secure Document Sharing Test File
+This content should remain secure and only readable after entering the correct password.
+Zero-Knowledge encryption verified!

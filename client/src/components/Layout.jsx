@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { Outlet, Link, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../store/slices/authSlice.js";
+import { initSocket, disconnectSocket } from "../services/socket.jsx";
 import {
   HiOutlineHome,
   HiOutlineCloudUpload,
@@ -13,7 +15,15 @@ export default function Layout() {
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
 
+  useEffect(() => {
+    if (user?._id) {
+      initSocket(user._id);
+    }
+    return () => disconnectSocket();
+  }, [user?._id]);
+
   const handleLogout = () => {
+    disconnectSocket();
     dispatch(logout());
     navigate("/login");
   };

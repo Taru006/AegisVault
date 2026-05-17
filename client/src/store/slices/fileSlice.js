@@ -38,6 +38,20 @@ export const uploadFile = createAsyncThunk(
   }
 );
 
+export const uploadFileVersion = createAsyncThunk(
+  "files/uploadVersion",
+  async ({ fileId, payload }, { rejectWithValue }) => {
+    try {
+      const { data } = await api.post(`/documents/${fileId}/versions`, payload);
+      return data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || "Version upload failed"
+      );
+    }
+  }
+);
+
 export const deleteFile = createAsyncThunk(
   "files/delete",
   async (fileId, { rejectWithValue }) => {
@@ -102,6 +116,30 @@ const fileSlice = createSlice({
         }
       })
       .addCase(uploadFile.rejected, (state, action) => {
+        state.loading = false;
+        state.uploadStatus = 'failed';
+        state.error = action.payload;
+      });
+
+    // Upload Version
+    builder
+      .addCase(uploadFileVersion.pending, (state) => {
+        state.loading = true;
+        state.uploadStatus = 'uploading';
+        state.error = null;
+      })
+      .addCase(uploadFileVersion.fulfilled, (state, action) => {
+        state.loading = false;
+        state.uploadStatus = 'success';
+        const updatedDoc = action.payload.document || action.payload.file;
+        if (updatedDoc) {
+          const index = state.fileList.findIndex(f => f._id === updatedDoc._id);
+          if (index !== -1) {
+            state.fileList[index] = updatedDoc;
+          }
+        }
+      })
+      .addCase(uploadFileVersion.rejected, (state, action) => {
         state.loading = false;
         state.uploadStatus = 'failed';
         state.error = action.payload;

@@ -7,7 +7,9 @@ export const registerUser = createAsyncThunk(
   async (userData, { rejectWithValue }) => {
     try {
       const { data } = await api.post("/auth/register", userData);
-      localStorage.setItem("token", data.accessToken);
+      // We don't set token here because user needs to verify MFA first?
+      // Actually backend says: "User registered. Scan QR code... then call POST /api/auth/verify-mfa to enable MFA."
+      // So we stay on registration page to show QR.
       return data;
     } catch (error) {
       return rejectWithValue(
@@ -22,11 +24,28 @@ export const login = createAsyncThunk(
   async (credentials, { rejectWithValue }) => {
     try {
       const { data } = await api.post("/auth/login", credentials);
-      localStorage.setItem("token", data.accessToken);
+      if (!data.mfaRequired) {
+        localStorage.setItem("token", data.accessToken);
+      }
       return data;
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message || "Login failed"
+      );
+    }
+  }
+);
+
+export const verifyMfa = createAsyncThunk(
+  "auth/verifyMfa",
+  async (mfaData, { rejectWithValue }) => {
+    try {
+      const { data } = await api.post("/auth/verify-mfa", mfaData);
+      localStorage.setItem("token", data.accessToken);
+      return data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || "MFA verification failed"
       );
     }
   }
@@ -55,6 +74,8 @@ const authSlice = createSlice({
     role: null,
     loading: false,
     error: null,
+    mfaRequired: false,
+    mfaSetup: null, // For registration QR code
   },
   reducers: {
     logout(state) {
@@ -67,6 +88,10 @@ const authSlice = createSlice({
     clearError(state) {
       state.error = null;
     },
+    resetMfaState(state) {
+      state.mfaRequired = false;
+      state.mfaSetup = null;
+    }
   },
   extraReducers: (builder) => {
     // Register
@@ -77,9 +102,8 @@ const authSlice = createSlice({
       })
       .addCase(registerUser.fulfilled, (state, action) => {
         state.loading = false;
-        state.user = action.payload.user;
-        state.token = action.payload.accessToken;
-        state.role = action.payload.user?.role || null;
+        state.mfaSetup = action.payload.mfa; // Store QR code URL and secret
+        // Note: we don't set token/user yet as they need to verify MFA
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.loading = false;
@@ -94,11 +118,33 @@ const authSlice = createSlice({
       })
       .addCase(login.fulfilled, (state, action) => {
         state.loading = false;
+        if (action.payload.mfaRequired) {
+          state.mfaRequired = true;
+        } else {
+          state.user = action.payload.user;
+          state.token = action.payload.accessToken;
+          state.role = action.payload.user?.role || null;
+        }
+      })
+      .addCase(login.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      });
+
+    // Verify MFA
+    builder
+      .addCase(verifyMfa.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(verifyMfa.fulfilled, (state, action) => {
+        state.loading = false;
+        state.mfaRequired = false;
         state.user = action.payload.user;
         state.token = action.payload.accessToken;
         state.role = action.payload.user?.role || null;
       })
-      .addCase(login.rejected, (state, action) => {
+      .addCase(verifyMfa.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       });
@@ -123,5 +169,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, clearError } = authSlice.actions;
+export const { logout, clearError, resetMfaState } = authSlice.actions;
 export default authSlice.reducer;

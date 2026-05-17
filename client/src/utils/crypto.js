@@ -117,9 +117,16 @@ export async function wrapDEK(dek) {
  * @returns {Promise<CryptoKey>} Unwrapped DEK
  */
 export async function unwrapDEK(encryptedDEK) {
-  // For now, simply strip the dummy wrapper and import it.
-  // In a real scenario, this would decrypt with a derived KEK.
-  const decoded = atob(encryptedDEK);
-  const exportedKey = decoded.replace('DUMMY_KEK_WRAPPED_', '');
-  return await importKey(exportedKey);
+  try {
+    const decoded = atob(encryptedDEK);
+    if (decoded.startsWith('DUMMY_KEK_WRAPPED_')) {
+      const exportedKey = decoded.replace('DUMMY_KEK_WRAPPED_', '');
+      return await importKey(exportedKey);
+    }
+  } catch (e) {
+    // If atob fails or doesn't have prefix, fall through to try direct import
+  }
+  
+  // Fallback: Try to import the string directly (assuming it's a raw base64 DEK)
+  return await importKey(encryptedDEK);
 }

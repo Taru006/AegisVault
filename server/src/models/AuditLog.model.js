@@ -4,7 +4,7 @@ import crypto from 'crypto';
 const auditLogSchema = new mongoose.Schema({
   action: {
     type: String,
-    enum: ['UPLOAD', 'DOWNLOAD', 'DELETE', 'SHARE', 'VIEW'],
+    enum: ['UPLOAD', 'DOWNLOAD', 'DOWNLOAD_SHARED', 'DELETE', 'SHARE', 'VIEW'],
     required: true,
   },
   userId: {

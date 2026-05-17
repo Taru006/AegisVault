@@ -34,6 +34,13 @@ const fileSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'FileVersion',
   },
+  folder: {
+    type: String,
+    default: 'root',
+  },
+  tags: [{
+    type: String,
+  }],
 }, { timestamps: true });
 
 const File = mongoose.model('File', fileSchema);

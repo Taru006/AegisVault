@@ -10,6 +10,7 @@ import documentRoutes from "./routes/document.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import auditRoutes from "./routes/audit.routes.js";
 import shareRoutes from "./routes/share.routes.js";
+import adminRoutes from "./routes/admin.routes.js";
 
 // Middleware imports
 import { notFound, errorHandler } from "./middleware/error.middleware.js";
@@ -48,6 +49,7 @@ export function createApp() {
   app.use("/api/users", userRoutes);
   app.use("/api/audit", auditRoutes);
   app.use("/api/share", shareRoutes);
+  app.use("/api/admin", adminRoutes);
 
   // ── Error Handling ──────────────────────────
   app.use(notFound);

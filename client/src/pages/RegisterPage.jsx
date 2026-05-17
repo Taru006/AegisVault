@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate, Link } from "react-router-dom";
-import { registerUser, clearError } from "../store/slices/authSlice.js";
-import { HiOutlineShieldCheck, HiOutlineLockClosed, HiOutlineMail, HiOutlineUser } from "react-icons/hi";
+import { registerUser, clearError, resetMfaState } from "../store/slices/authSlice.js";
+import { HiOutlineShieldCheck, HiOutlineLockClosed, HiOutlineMail, HiOutlineUser, HiOutlineFingerPrint, HiOutlineChevronRight } from "react-icons/hi";
+import { QRCodeSVG } from "qrcode.react";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -13,13 +14,14 @@ export default function RegisterPage() {
   const [localError, setLocalError] = useState("");
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { loading, error, token } = useSelector((state) => state.auth);
+  const { loading, error, token, mfaSetup } = useSelector((state) => state.auth);
 
   useEffect(() => {
     if (token) navigate("/");
   }, [token, navigate]);
 
   useEffect(() => {
+    dispatch(resetMfaState());
     return () => dispatch(clearError());
   }, [dispatch]);
 
@@ -40,6 +42,39 @@ export default function RegisterPage() {
   };
 
   const displayError = localError || error;
+
+  if (mfaSetup) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-dark-950 px-4">
+        <div className="relative w-full max-w-md animate-fade-in">
+          <div className="bg-dark-900/80 backdrop-blur-xl border border-dark-700/50 rounded-3xl p-8 shadow-2xl text-center">
+            <div className="w-16 h-16 bg-vault-600/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <HiOutlineFingerPrint className="w-10 h-10 text-vault-400" />
+            </div>
+            <h1 className="text-2xl font-bold text-white mb-2">Enable MFA</h1>
+            <p className="text-dark-400 text-sm mb-8">Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.) to secure your account.</p>
+            
+            <div className="bg-white p-4 rounded-2xl inline-block mb-8 shadow-xl">
+              <QRCodeSVG value={mfaSetup.otpAuthUrl} size={200} />
+            </div>
+
+            <div className="bg-dark-800/50 rounded-xl p-4 mb-8 text-left border border-dark-700/50">
+              <p className="text-[10px] uppercase tracking-widest font-bold text-dark-500 mb-2">Manual Entry Key</p>
+              <code className="text-vault-300 font-mono break-all">{mfaSetup.secret}</code>
+            </div>
+
+            <Link 
+              to="/login"
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl bg-vault-600 text-white font-bold hover:bg-vault-500 transition-all"
+            >
+              Go to Login
+              <HiOutlineChevronRight className="w-5 h-5" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-dark-950 px-4">
