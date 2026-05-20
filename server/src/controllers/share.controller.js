@@ -1,10 +1,14 @@
+import fs from 'fs';
+import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import ShareLink from '../models/ShareLink.model.js';
 import File from '../models/File.model.js';
 import { notifyUser } from '../config/socket.js';
 import AuditLog from '../models/AuditLog.model.js';
 import bcrypt from 'bcryptjs';
-import { serveFile, fileExists } from '../utils/storage.js';
+
+// Ensure uploads directory exists for mock local download
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 
 /**
  * @route   POST /api/share
@@ -113,8 +117,8 @@ export const accessShareLink = async (req, res, next) => {
       throw new Error('The original file has been deleted');
     }
 
-    const exists = await fileExists(file.s3Key);
-    if (!exists) {
+    const filePath = path.join(UPLOADS_DIR, file.s3Key);
+    if (!fs.existsSync(filePath)) {
       res.status(404);
       throw new Error('File blob missing from storage');
     }
@@ -190,8 +194,8 @@ export const downloadSharedFile = async (req, res, next) => {
       throw new Error('The original file has been deleted');
     }
 
-    const exists = await fileExists(file.s3Key);
-    if (!exists) {
+    const filePath = path.join(UPLOADS_DIR, file.s3Key);
+    if (!fs.existsSync(filePath)) {
       res.status(404);
       throw new Error('File blob missing from storage');
     }
@@ -223,7 +227,11 @@ export const downloadSharedFile = async (req, res, next) => {
     });
 
     // Serve the file
-    await serveFile(file.s3Key, res, file.name);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${file.name}.enc"`);
+
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
   } catch (error) {
     next(error);
   }
