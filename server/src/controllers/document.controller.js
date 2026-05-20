@@ -1,16 +1,9 @@
-import fs from 'fs';
-import path from 'path';
 import { v4 as uuidv4 } from "uuid";
 import File from "../models/File.model.js";
 import FileVersion from "../models/FileVersion.model.js";
 import AuditLog from "../models/AuditLog.model.js";
 import mongoose from "mongoose";
-
-// Ensure uploads directory exists
-const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
+import { uploadFile, serveFile, deleteFile, fileExists } from "../utils/storage.js";
 
 /**
  * @route   POST /api/documents
@@ -27,12 +20,11 @@ export const uploadDocument = async (req, res, next) => {
     }
 
     const fileId = new mongoose.Types.ObjectId(); // Create ID beforehand for Audit Log and s3Key
-    const s3Key = `local_${req.user._id}_${uuidv4()}`;
-    const filePath = path.join(UPLOADS_DIR, s3Key);
+    const s3Key = `s3_${req.user._id}_${uuidv4()}`;
 
-    // Save encrypted blob to local disk (mocking S3)
+    // Save encrypted blob to storage
     const buffer = Buffer.from(encryptedData, "base64");
-    await fs.promises.writeFile(filePath, buffer);
+    await uploadFile(s3Key, buffer, mimeType);
 
     // Save metadata to MongoDB
     const newFile = await File.create({
@@ -97,11 +89,10 @@ export const uploadDocumentVersion = async (req, res, next) => {
       throw new Error("Access denied");
     }
 
-    const s3Key = `local_${req.user._id}_${uuidv4()}`;
-    const filePath = path.join(UPLOADS_DIR, s3Key);
+    const s3Key = `s3_${req.user._id}_${uuidv4()}`;
 
     const buffer = Buffer.from(encryptedData, "base64");
-    await fs.promises.writeFile(filePath, buffer);
+    await uploadFile(s3Key, buffer, file.mimeType);
 
     const oldVersionsCount = await FileVersion.countDocuments({ fileId: file._id });
 
@@ -170,8 +161,8 @@ export const getDocument = async (req, res, next) => {
 
     // No owner restriction for viewing/downloading in a centralized vault
 
-    const filePath = path.join(UPLOADS_DIR, doc.s3Key);
-    if (!fs.existsSync(filePath)) {
+    const exists = await fileExists(doc.s3Key);
+    if (!exists) {
       res.status(404);
       throw new Error("File blob missing from storage");
     }
@@ -207,8 +198,8 @@ export const downloadDocument = async (req, res, next) => {
 
     // No owner restriction for downloading in a centralized vault
 
-    const filePath = path.join(UPLOADS_DIR, doc.s3Key);
-    if (!fs.existsSync(filePath)) {
+    const exists = await fileExists(doc.s3Key);
+    if (!exists) {
       res.status(404);
       throw new Error("File blob missing from storage");
     }
@@ -224,11 +215,7 @@ export const downloadDocument = async (req, res, next) => {
       previousHash
     });
 
-    res.setHeader('Content-Type', 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${doc.name}.enc"`);
-
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
+    await serveFile(doc.s3Key, res, doc.name);
   } catch (error) {
     next(error);
   }
@@ -256,11 +243,8 @@ export const deleteDocument = async (req, res, next) => {
       throw new Error("Only the owner or an Admin can delete this file");
     }
 
-    // Delete from disk
-    const filePath = path.join(UPLOADS_DIR, doc.s3Key);
-    if (fs.existsSync(filePath)) {
-      await fs.promises.unlink(filePath);
-    }
+    // Delete from storage
+    await deleteFile(doc.s3Key);
 
     // Delete from MongoDB
     await doc.deleteOne();
